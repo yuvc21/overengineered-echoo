@@ -73,12 +73,22 @@ std::string readFile(const std::string &filePath) {
   return buffer.str();
 }
 
+bool isSafeFilename(const std::string &name) {
+  return !name.empty() && name != "." && name != ".." &&
+         name.find('/') == std::string::npos &&
+         name.find('\\') == std::string::npos;
+}
+
 std::string generateResponse(const std::string &method, const std::string &path,
-                 const std::string &body, const std::string &directory,
-                 const std::string &acceptEncoding) {
+                             const std::string &body,
+                             const std::string &directory,
+                             const std::string &acceptEncoding) {
   // handling POST (no compression for POST responses)
   if (method == "POST" && isFilePath(path)) {
     std::string filename = extractFileName(path);
+    if (!isSafeFilename(filename)) {
+      return "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
+    }
     std::string filepath = directory + "/" + filename;
 
     if (writeFile(filepath, body)) {
@@ -92,20 +102,24 @@ std::string generateResponse(const std::string &method, const std::string &path,
   bool useGzip = (acceptEncoding.find("gzip") != std::string::npos);
 
   // handling the GET files
-  if(method == "GET" && isFilePath(path)){
+  if (method == "GET" && isFilePath(path)) {
     std::string filename = extractFileName(path);
+    if (!isSafeFilename(filename)) {
+      return "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
+    }
     std::string filepath = directory + "/" + filename;
 
-    if(fileExists(filepath)){
+    if (fileExists(filepath)) {
       std::string content = readFile(filepath);
       // compressing if the client supports gzip
-      if(useGzip){
+      if (useGzip) {
         std::string compressed = gzipCompress(content);
-        if(!compressed.empty()){
+        if (!compressed.empty()) {
           std::string response = "HTTP/1.1 200 OK\r\n";
           response += "Content-Type: application/octet-stream\r\n";
           response += "Content-Encoding: gzip\r\n";
-          response += "Content-Length: " + std::to_string(compressed.size()) + "\r\n";
+          response +=
+              "Content-Length: " + std::to_string(compressed.size()) + "\r\n";
           response += "\r\n";
           response += compressed;
           return response;
@@ -119,23 +133,24 @@ std::string generateResponse(const std::string &method, const std::string &path,
       response += "\r\n";
       response += content;
       return response;
-    }else{
+    } else {
       return "HTTP/1.1 404 Not Found\r\n\r\n";
     }
   }
-  
+
   // handling the GET /echo/
-  if(method == "GET" &&isEchoPath(path)){
-  
+  if (method == "GET" && isEchoPath(path)) {
+
     std::string echo_str = extractEchoString(path);
 
-    if(useGzip){
+    if (useGzip) {
       std::string compressed = gzipCompress(echo_str);
-      if(!compressed.empty()){
+      if (!compressed.empty()) {
         std::string response = "HTTP/1.1 200 OK\r\n";
         response += "Content-Type: text/plain\r\n";
         response += "Content-Encoding: gzip\r\n";
-        response += "Content-Length: " + std::to_string(compressed.size()) + "\r\n";
+        response +=
+            "Content-Length: " + std::to_string(compressed.size()) + "\r\n";
         response += "\r\n";
         response += compressed;
         return response;
@@ -149,10 +164,9 @@ std::string generateResponse(const std::string &method, const std::string &path,
     response += echo_str;
     return response;
   }
-  if(path == "/"){
+  if (path == "/") {
     return "HTTP/1.1 200 OK\r\n\r\n";
-  }
-  else{
+  } else {
     return "HTTP/1.1 404 Not Found\r\n\r\n";
   }
 }
@@ -266,7 +280,7 @@ std::string extractAcceptEncoding(const std::string &request) {
   size_t last = encoding.find_last_not_of(" \t");
 
   if (first == std::string::npos) {
-    return ""; //header exists but empty
+    return ""; // header exists but empty
   }
 
   // returning the trimmed string
