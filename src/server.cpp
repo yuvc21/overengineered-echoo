@@ -1,8 +1,11 @@
 #include "server.hpp"
 #include "http_parser.hpp"
+#include <algorithm>
 #include <arpa/inet.h>
+#include <cctype>
 #include <cstring>
 #include <iostream>
+#include <sys/time.h>
 #include <sys/socket.h> // send(), recv(), socket(), bind(), listen(), accept()
 #include <thread>
 // #include <sys/socket.h> // send(), recv(), socket(), bind(), listen(),
@@ -19,6 +22,63 @@ send(client_socket, response.c_str(), response.length(), 0);
  Your program asks the Linux kernel:
  "Please send this data through network socket #X"
 */
+
+constexpr size_t kMaxRequestBytes = 1024 * 1024;
+
+// this takes in the string
+// this provides number to the readRequest so it can stop when required
+long contentLength(const std::string &headers) {
+  std::string lower = headers;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return tolower(c); });
+  size_t pos = lower.find("\r\ncontent-length:");
+  if (pos == std::string::npos)
+    return 0;
+  pos += 17;
+  size_t end = lower.find("\r\n", pos);
+  if (end == std::string::npos)
+    return -1;
+  std::string lengthText = headers.substr(pos, end - pos);
+  size_t first = lengthText.find_first_not_of(" \t"),
+         last = lengthText.find_last_not_of(" \t");
+  if (first == std::string::npos)
+    return -1;
+  lengthText = lengthText.substr(first, last - first + 1);
+  if (lengthText.size() > 15 ||
+      lengthText.find_first_not_of("0123456789") != std::string::npos)
+    return -1;
+  return std::stol(lengthText);
+}
+
+// reads one full request
+// returns 0(fine), 400(time-out/malformed/closed-), 413(too-large)
+int readRequest(int fd, std::string &request) {
+  char buf[4096];
+  size_t header_end = std::string::npos;
+  long need = -1;
+  while (true) {
+    if (header_end != std::string::npos && (long)request.size() >= need) {
+      return 0;
+    }
+    ssize_t n = recv(fd, buf, sizeof(buf), 0);
+    if (n <= 0)
+      return 400; // closed, error, or SO_RCVTIMEO firex
+    request.append(buf, n);
+    if (request.size() > kMaxRequestBytes)
+      return 413;
+    if (header_end == std::string::npos) {
+      header_end = request.find("\r\n\r\n");
+      if (header_end != std::string::npos) {
+        long len = contentLength(request.substr(0, header_end + 2));
+        if (len < 0)
+          return 400;
+        if ((size_t)len + header_end + 4 > kMaxRequestBytes)
+          return 413;
+        need = (long)header_end + 4 + len;
+      }
+    }
+  }
+}
 
 Server::Server(const std::string &directory)
     : server_fd(-1), filesDirectory(directory) {}
@@ -102,10 +162,22 @@ void Server::start() {
 }
 void Server::handleClient(int client_fd) {
   // reading the request
-  char buffer[4096] = {0};
-  read(client_fd, buffer, sizeof(buffer));
+  timeval tv{5, 0};
+  setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-  std::string request(buffer);
+  std::string request;
+  int rc = readRequest(client_fd, request);
+  if (rc != 0) {
+    const char *resp;
+    if (rc == 413) {
+      resp = "HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\n\r\n";
+    } else {
+      resp = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
+    }
+    send(client_fd, resp, strlen(resp), MSG_NOSIGNAL);
+    close(client_fd);
+    return;
+  }
 
   // extracting path
   std::string path = HttpParser::extractPath(request);
