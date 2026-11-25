@@ -22,11 +22,13 @@ private:
   // Example: "/tmp" means files are in /tmp/filename
   std::string filesDirectory;
 
+  int port;
+
 public:
   // Constructor with optional directory parameter
   // Default is empty string "" if no directory provided
   // Usage: Server myServer("/tmp");
-  Server(const std::string &directory = "");
+  Server(const std::string &directory = "", int port = 4221);
 
   // Destructor - automatically called when Server object is destroyed
   // Closes the server socket to free resources

@@ -92,8 +92,8 @@ static std::string route(const std::string &method, const std::string &path,
   return HttpParser::generateResponse(method, path, body, dir, acceptEncoding);
 }
 
-Server::Server(const std::string &directory)
-    : server_fd(-1), filesDirectory(directory) {}
+Server::Server(const std::string &directory, int port)
+    : server_fd(-1), filesDirectory(directory), port(port) {}
 
 Server::~Server() {
   if (server_fd >= 0) {
@@ -121,11 +121,11 @@ bool Server::setup() {
   struct sockaddr_in server_addr;
   server_addr.sin_family = AF_INET;
   server_addr.sin_addr.s_addr = INADDR_ANY;
-  server_addr.sin_port = htons(4221);
+  server_addr.sin_port = htons(port);
 
   if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) !=
       0) {
-    std::cerr << "Failed to bind port 4221\n";
+    std::cerr << "Failed to bind port " << port << "\n";
     return false;
   }
 
@@ -151,7 +151,7 @@ int Server::acceptClient() {
 }
 
 void Server::start() {
-  std::cout << "Server is running on port 4221...." << std::endl;
+  std::cout << "Server is running on port " << port << "......." << std::endl;
 
   // infinite loop to keep accepting connections
   while (true) {

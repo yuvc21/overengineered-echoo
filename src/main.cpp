@@ -1,4 +1,5 @@
 #include "server.hpp"
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -21,8 +22,16 @@ int main(int argc, char *argv[]) {
       break;
     }
   }
+
+  int port = 4221;
+  if (const char *env = std::getenv("PORT")) {
+    int p = std::atoi(env);
+    if (p > 0 && p < 65536)
+      port = p;
+  }
+
   // create and setup server
-  Server server(directory);
+  Server server(directory, port);
   if (!server.setup()) {
     std::cerr << "Server setup falied" << std::endl;
     return 1;
