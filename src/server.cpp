@@ -5,8 +5,8 @@
 #include <cctype>
 #include <cstring>
 #include <iostream>
-#include <sys/time.h>
 #include <sys/socket.h> // send(), recv(), socket(), bind(), listen(), accept()
+#include <sys/time.h>
 #include <thread>
 // #include <sys/socket.h> // send(), recv(), socket(), bind(), listen(),
 // accept()
@@ -78,6 +78,18 @@ int readRequest(int fd, std::string &request) {
       }
     }
   }
+}
+
+static std::string route(const std::string &method, const std::string &path,
+                         const std::string &body, const std::string &dir,
+                         const std::string &acceptEncoding) {
+  if (path == "/health" && method == "GET") {
+    const std::string json = "{\"status\":\"ok\"}";
+    return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+           "Content-Length: " +
+           std::to_string(json.size()) + "\r\n\r\n" + json;
+  }
+  return HttpParser::generateResponse(method, path, body, dir, acceptEncoding);
 }
 
 Server::Server(const std::string &directory)
@@ -195,8 +207,8 @@ void Server::handleClient(int client_fd) {
   std::cout << "Accept-Encoding: " << acceptEncoding << std::endl;
 
   // generating responses with method support
-  std::string response = HttpParser::generateResponse(
-      method, path, body, filesDirectory, acceptEncoding);
+  std::string response =
+      route(method, path, body, filesDirectory, acceptEncoding);
 
   // sending response
   send(client_fd, response.c_str(), response.length(), 0);
